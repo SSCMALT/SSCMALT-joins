@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Roblox Portal</title>
+    <style>
+        :root {
+            --bg: #111111;
+            --card: #1e1e1e;
+            --accent: #00e676; /* Roblox Green */
+            --warning: #ff9100;
+            --danger: #ff5252;
+            --text: #ffffff;
+        }
+
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background: var(--bg); 
+            color: var(--text); 
+            margin: 0; 
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container { width: 100%; max-width: 500px; display: flex; flex-direction: column; gap: 15px; }
+
+        /* Profile Card */
+        .card {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255,255,255,0.05);
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .dot { width: 10px; height: 10px; border-radius: 50%; background: #555; }
+        .dot.online { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+        .dot.warning { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+
+        .btn {
+            display: block;
+            background: var(--accent);
+            color: #000;
+            text-decoration: none;
+            padding: 14px;
+            border-radius: 10px;
+            font-weight: bold;
+            margin-top: 15px;
+            transition: 0.2s;
+        }
+
+        .join-warning {
+            background: rgba(255, 145, 0, 0.15);
+            color: var(--warning);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            margin-top: 15px;
+            display: none;
+            border: 1px solid rgba(255, 145, 0, 0.3);
+        }
+
+        /* Announcements */
+        .announcement-box {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 20px;
+        }
+
+        .announcement-item {
+            background: #2a2a2a;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            font-size: 0.95rem;
+            position: relative;
+        }
+
+        .time { font-size: 0.7rem; color: #888; display: block; margin-bottom: 4px; }
+
+        /* Admin Controls */
+        .admin-section {
+            border: 1px dashed #444;
+            padding: 15px;
+            border-radius: 12px;
+            display: none;
+            margin-top: 20px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border: none;
+            background: #333;
+            color: white;
+            box-sizing: border-box;
+        }
+
+        .admin-toggle { opacity: 0.1; font-size: 0.7rem; margin-top: 40px; cursor: pointer; }
+        .del-btn { color: var(--danger); font-size: 0.7rem; background: none; border: 1px solid var(--danger); padding: 2px 6px; border-radius: 4px; float: right; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <div id="statusIndicator">
+            <div class="status-badge"><div class="dot"></div> Syncing status...</div>
+        </div>
+        
+        <h2 style="margin: 10px 0;">My Roblox Profile</h2>
+        
+        <div id="profileLinkArea">
+            </div>
+
+        <div id="joinWarning" class="join-warning">
+            ⚠️ <b>Joins might be OFF:</b> I'm browsing the app but not in a game right now.
+        </div>
+    </div>
+
+    <div class="announcement-box">
+        <h3 style="margin-top:0;">📢 News</h3>
+        <div id="newsList"></div>
+    </div>
+
+    <div id="adminPanel" class="admin-section">
+        <h4 style="margin-top:0;">🔒 Admin Controls</h4>
+        <button onclick="toggleVisibility()" class="btn" style="background:#444; color:white; margin-bottom:10px;">Hide/Unhide Link</button>
+        <input type="text" id="newsInput" placeholder="New announcement...">
+        <button onclick="addNews()" class="btn">Post News</button>
+    </div>
+
+    <div class="admin-toggle" onclick="adminLogin()">System Login</div>
+</div>
+
+<script>
+    // --- CONFIGURATION ---
+    const ROBLOX_ID = "YOUR_ID_HERE"; // <--- CHANGE THIS TO YOUR NUMERIC ID
+    const PROFILE_URL = `https://www.roblox.com/users/${ROBLOX_ID}/profile`;
+    const ADMIN_PASS = "1234"; // <--- CHANGE THIS
+
+    // --- STATE ---
+    let state = JSON.parse(localStorage.getItem('hubState')) || {
+        manualHide: false,
+        news: []
+    };
+
+    function save() {
+        localStorage.setItem('hubState', JSON.stringify(state));
+        render();
+    }
+
+    // --- DATA FETCHING ---
+    async function updateStatus() {
+        const indicator = document.getElementById('statusIndicator');
+        const warning = document.getElementById('joinWarning');
+        const linkArea = document.getElementById('profileLinkArea');
+
+        try {
+            // Using RoProxy to check your live presence
+            const res = await fetch(`https://presence.roproxy.com/v1/presence/users`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userIds: [parseInt(ROBLOX_ID)] })
+            });
+            const data = await res.json();
+            const user = data.userPresences[0];
+
+            let statusHTML = '';
+            let showWarning = false;
+
+            // Type 2 = In Game, Type 1 = Online (Website), Type 0 = Offline
+            if (user.userPresenceType === 2) {
+                statusHTML = `<div class="status-badge"><div class="dot online"></div> Playing: ${user.lastLocation}</div>`;
+            } else if (user.userPresenceType === 1) {
+                statusHTML = `<div class="status-badge"><div class="dot warning"></div> Online</div>`;
+                showWarning = true;
+            } else {
+                statusHTML = `<div class="status-badge"><div class="dot"></div> Offline</div>`;
+            }
+
+            indicator.innerHTML = statusHTML;
+            warning.style.display = showWarning ? 'block' : 'none';
+
+            // Show link only if not manually hidden
+            if (!state.manualHide) {
+                linkArea.innerHTML = `<a href="${PROFILE_URL}" target="_blank" class="btn">🚀 Visit Profile</a>`;
+            } else {
+                linkArea.innerHTML = `<p style="color:#666; font-style:italic;">Owner has hidden the link.</p>`;
+            }
+
+        } catch (e) {
+            indicator.innerHTML = `<div class="status-badge" style="color:var(--danger)">Offline Mode (Sync Error)</div>`;
+            linkArea.innerHTML = `<a href="${PROFILE_URL}" target="_blank" class="btn">🚀 Visit Profile</a>`;
+        }
+    }
+
+    // --- RENDER ---
+    function render() {
+        const list = document.getElementById('newsList');
+        list.innerHTML = state.news.length ? '' : '<p style="color:#666">No news today.</p>';
+        
+        state.news.forEach((n, index) => {
+            const isAdmin = document.getElementById('adminPanel').style.display === 'block';
+            list.innerHTML += `
+                <div class="announcement-item">
+                    ${isAdmin ? `<button class="del-btn" onclick="deleteNews(${index})">Delete</button>` : ''}
+                    <span class="time">${n.date}</span>
+                    ${n.text}
+                </div>
+            `;
+        });
+        updateStatus();
+    }
+
+    // --- ACTIONS ---
+    function adminLogin() {
+        if (prompt("Password:") === ADMIN_PASS) {
+            document.getElementById('adminPanel').style.display = 'block';
+            render();
+        }
+    }
+
+    function toggleVisibility() {
+        state.manualHide = !state.manualHide;
+        save();
+    }
+
+    function addNews() {
+        const input = document.getElementById('newsInput');
+        if (!input.value) return;
+        state.news.unshift({
+            text: input.value,
+            date: new Date().toLocaleDateString() + " " + new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+        });
+        input.value = '';
+        save();
+    }
+
+    function deleteNews(index) {
+        state.news.splice(index, 1);
+        save();
+    }
+
+    // Start
+    render();
+    setInterval(updateStatus, 30000); // Check status every 30s
+</script>
+
+</body>
+</html>
